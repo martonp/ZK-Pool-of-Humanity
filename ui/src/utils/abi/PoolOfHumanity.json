@@ -1,0 +1,515 @@
+[
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "_humanityVerifier",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "_updateVerifier",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "_poh",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "_hasher2",
+                "type": "address"
+            },
+            {
+                "internalType": "address",
+                "name": "_hasher3",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "nonpayable",
+        "type": "constructor"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "index",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "bytes32",
+                "name": "pubKey",
+                "type": "bytes32"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "submissionTime",
+                "type": "uint256"
+            }
+        ],
+        "name": "Registered",
+        "type": "event"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {
+                "indexed": true,
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "indexed": false,
+                "internalType": "uint256",
+                "name": "submissionTime",
+                "type": "uint256"
+            },
+            {
+                "indexed": false,
+                "internalType": "bool",
+                "name": "registered",
+                "type": "bool"
+            }
+        ],
+        "name": "Updated",
+        "type": "event"
+    },
+    {
+        "inputs": [],
+        "name": "FIELD_SIZE",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "ROOT_HISTORY_SIZE",
+        "outputs": [
+            {
+                "internalType": "uint32",
+                "name": "",
+                "type": "uint32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "ZERO_VALUE",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes32",
+                "name": "root",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "uint256",
+                "name": "currentTime",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "appID",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "expectedAppNullifier",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256[8]",
+                "name": "proof",
+                "type": "uint256[8]"
+            }
+        ],
+        "name": "checkHumanity",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "currentRootIndex",
+        "outputs": [
+            {
+                "internalType": "uint32",
+                "name": "",
+                "type": "uint32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "depositAmount",
+        "outputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "name": "filledSubtrees",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "getLastRoot",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes32",
+                "name": "_left",
+                "type": "bytes32"
+            },
+            {
+                "internalType": "bytes32",
+                "name": "_right",
+                "type": "bytes32"
+            }
+        ],
+        "name": "hashLeftRight",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "hasher",
+        "outputs": [
+            {
+                "internalType": "contract IHasher",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "hasher3",
+        "outputs": [
+            {
+                "internalType": "contract IHasher3",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "humanityVerifier",
+        "outputs": [
+            {
+                "internalType": "contract IHumanityVerifier",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes32",
+                "name": "_root",
+                "type": "bytes32"
+            }
+        ],
+        "name": "isKnownRoot",
+        "outputs": [
+            {
+                "internalType": "bool",
+                "name": "",
+                "type": "bool"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "levels",
+        "outputs": [
+            {
+                "internalType": "uint32",
+                "name": "",
+                "type": "uint32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "nextIndex",
+        "outputs": [
+            {
+                "internalType": "uint32",
+                "name": "",
+                "type": "uint32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "poh",
+        "outputs": [
+            {
+                "internalType": "contract IProofOfHumanity",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "bytes32",
+                "name": "pubkey",
+                "type": "bytes32"
+            }
+        ],
+        "name": "register",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "name": "roots",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "submissionTime",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes32[]",
+                "name": "currentPath",
+                "type": "bytes32[]"
+            },
+            {
+                "internalType": "bytes32[]",
+                "name": "updatedPath",
+                "type": "bytes32[]"
+            },
+            {
+                "internalType": "uint256[2]",
+                "name": "a",
+                "type": "uint256[2]"
+            },
+            {
+                "internalType": "uint256[2][2]",
+                "name": "b",
+                "type": "uint256[2][2]"
+            },
+            {
+                "internalType": "uint256[2]",
+                "name": "c",
+                "type": "uint256[2]"
+            }
+        ],
+        "name": "unregister",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "user",
+                "type": "address"
+            },
+            {
+                "internalType": "uint256",
+                "name": "previousSubmissionTime",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "previouslyRegistered",
+                "type": "uint256"
+            },
+            {
+                "internalType": "bytes32[]",
+                "name": "currentPath",
+                "type": "bytes32[]"
+            },
+            {
+                "internalType": "bytes32[]",
+                "name": "updatedPath",
+                "type": "bytes32[]"
+            },
+            {
+                "internalType": "uint256[2]",
+                "name": "a",
+                "type": "uint256[2]"
+            },
+            {
+                "internalType": "uint256[2][2]",
+                "name": "b",
+                "type": "uint256[2][2]"
+            },
+            {
+                "internalType": "uint256[2]",
+                "name": "c",
+                "type": "uint256[2]"
+            }
+        ],
+        "name": "updateSubmission",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "updateVerifier",
+        "outputs": [
+            {
+                "internalType": "contract IUpdateVerifier",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "address",
+                "name": "",
+                "type": "address"
+            }
+        ],
+        "name": "users",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {
+                "internalType": "uint256",
+                "name": "",
+                "type": "uint256"
+            }
+        ],
+        "name": "zeros",
+        "outputs": [
+            {
+                "internalType": "bytes32",
+                "name": "",
+                "type": "bytes32"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    }
+]

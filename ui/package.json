@@ -1,0 +1,35 @@
+{
+  "name": "zk-pool-humanity-gatsby",
+  "version": "1.0.0",
+  "private": true,
+  "description": "zk-pool-humanity-gatsby",
+  "author": "martonp",
+  "keywords": [
+    "gatsby"
+  ],
+  "scripts": {
+    "develop": "gatsby develop",
+    "start": "gatsby serve --port $PORT --host 0.0.0.0",
+    "build": "gatsby build",
+    "serve": "gatsby serve",
+    "clean": "gatsby clean"
+  },
+  "dependencies": {
+    "@ethersproject/providers": "^5.7.2",
+    "@web3-react/core": "^6.1.9",
+    "@web3-react/injected-connector": "^6.0.7",
+    "bootstrap": "^5.2.3",
+    "circomlibjs": "^0.1.7",
+    "crypto-browserify": "^3.12.0",
+    "gatsby": "^5.3.3",
+    "moment": "^2.29.4",
+    "node-polyfill-webpack-plugin": "^2.0.1",
+    "os-browserify": "^0.3.0",
+    "react": "^18.2.0",
+    "react-bootstrap": "^2.7.0",
+    "react-dom": "^18.2.0",
+    "snarkjs": "^0.5.0",
+    "stream-browserify": "^3.0.0",
+    "web3": "^1.8.1"
+  }
+}
