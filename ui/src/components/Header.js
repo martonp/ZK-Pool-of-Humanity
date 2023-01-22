@@ -15,10 +15,7 @@ const ConnectWalletButton = () => {
             deactivate()
         } else {
             activate(injected, (err) => {
-                if(err.name === "UnsupportedChainIdError") {
-                    console.log("UnsupportedChainIdError")
-                    alert("Please connect to the Goerli Test Network")
-                }
+                alert("Please connect to the Goerli Test Network");
             })
         }
     }

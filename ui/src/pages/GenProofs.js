@@ -97,10 +97,7 @@ const GenerateKeysModal = ({ show, onHide, updateKeys }) => {
             <Modal.Body>
                 <p>Clicking the button below will generate a public/private key pair for the Pool of Humanity.</p>
                 <p>These keys will be used to register and update your entry in the Pool of Humanity.</p>
-                <p>You will be asked to sign <b>keccak256("poolofhumanity")</b> in your wallet.</p>
-                <p>For your safety, confirm that you are signing the correct message by typing "poolofhumanity"
-                    into this website: <a href="https://emn178.github.io/online-tools/keccak_256.html" target="_blank">https://emn178.github.io/online-tools/keccak_256.html</a>.
-                </p>
+                <p>You will be asked to sign <b>"poolofhumanity"</b> in your wallet.</p>
             </Modal.Body>
             <Modal.Footer>
                 <Button variant="secondary" onClick={onHide}>
@@ -226,8 +223,6 @@ const ProofModal = ({ show, onHide, generateNewProof, proof }) => {
     if (!proof) {
         return null;
     }
-
-    console.log(proof);
 
     return (
         <Modal show={show} onHide={() => onHide()}>
@@ -511,8 +506,7 @@ const PoolAccountPage = () => {
     const updateKeys = async () => {
         const provider = await connector.getProvider();
         const web3 = new Web3(provider);
-        const hash = web3.utils.sha3("poolofhumanity");
-        const signature = await web3.eth.sign(hash, account);
+        const signature = await web3.eth.personal.sign("poolofhumanity", account);
         const privateKey = web3.utils.sha3(signature);
         const poseidon = await buildPoseidon();
         const publicKey = poseidonHash(poseidon, [privateKey]);
