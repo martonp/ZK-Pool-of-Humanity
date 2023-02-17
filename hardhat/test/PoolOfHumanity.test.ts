@@ -63,9 +63,12 @@ interface HumanityProofInputs {
 }
 
 async function proveHumanity(input: HumanityProofInputs): Promise<Proof> {
-    return prove(input,
+    console.time("proveHumanity")
+    const proof = prove(input,
                     "../circuits/build/humanity_verifier/HumanityVerifier_js/HumanityVerifier.wasm",
                     "../circuits/build/humanity_verifier/HumanityVerifier_final.zkey")
+    console.timeEnd("proveHumanity")
+    return proof
 }
 
 interface UpdateProofInputs {
@@ -81,9 +84,12 @@ interface UpdateProofInputs {
 }
 
 async function proveUpdate(input: UpdateProofInputs): Promise<Proof> {
-    return prove(input,
+    console.time("proveUpdate")
+    const proof = await prove(input,
         "../circuits/build/update_verifier/UpdateVerifier_js/UpdateVerifier.wasm",
         "../circuits/build/update_verifier/UpdateVerifier_final.zkey")
+    console.timeEnd("proveUpdate")
+    return proof
 }
 
 function getPoseidonFactory(nInputs: number) {
@@ -239,3 +245,38 @@ describe("PoolOfHumanity", function () {
         expect(await poolState.merkleTree.root()).to.equal(await poolOfHumanity.roots(await poolOfHumanity.currentRootIndex()));
     }).timeout(500000);
 });
+
+/*
+
+proveUpdate: 1.388s
+proveUpdate: 1.201s
+proveHumanity: 0.115ms
+proveUpdate: 1.254s
+
+·---------------------------------------|---------------------------|--------------|-----------------------------·
+|         Solc version: 0.8.17          ·  Optimizer enabled: true  ·  Runs: 1000  ·  Block limit: 30000000 gas  │
+········································|···························|··············|······························
+|  Methods                                                                                                       │
+···················|····················|·············|·············|··············|···············|··············
+|  Contract        ·  Method            ·  Min        ·  Max        ·  Avg         ·  # calls      ·  usd (avg)  │
+···················|····················|·············|·············|··············|···············|··············
+|  PoolOfHumanity  ·  register          ·     889830  ·     912138  ·      900984  ·            2  ·          -  │
+···················|····················|·············|·············|··············|···············|··············
+|  PoolOfHumanity  ·  unregister        ·          -  ·          -  ·      807269  ·            1  ·          -  │
+···················|····················|·············|·············|··············|···············|··············
+|  PoolOfHumanity  ·  updateSubmission  ·     807317  ·     810446  ·      808882  ·            2  ·          -  │
+···················|····················|·············|·············|··············|···············|··············
+|  TestPOH         ·  updateSubmission  ·      30296  ·      91683  ·       56715  ·            4  ·          -  │
+···················|····················|·············|·············|··············|···············|··············
+|  Deployments                          ·                                          ·  % of limit   ·             │
+········································|·············|·············|··············|···············|··············
+|  HumanityVerifier                     ·          -  ·          -  ·     1124123  ·        3.7 %  ·          -  │
+········································|·············|·············|··············|···············|··············
+|  PoolOfHumanity                       ·          -  ·          -  ·     3650066  ·       12.2 %  ·          -  │
+········································|·············|·············|··············|···············|··············
+|  TestPOH                              ·          -  ·          -  ·      371109  ·        1.2 %  ·          -  │
+········································|·············|·············|··············|···············|··············
+|  UpdateVerifier                       ·          -  ·          -  ·     2205041  ·        7.4 %  ·          -  │
+·---------------------------------------|-------------|-------------|--------------|---------------|-------------·
+
+*/
