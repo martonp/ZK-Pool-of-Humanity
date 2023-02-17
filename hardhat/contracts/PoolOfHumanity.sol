@@ -3,23 +3,10 @@ pragma solidity ^0.8.0;
 
 import "./MerkleTreeWithHistory.sol";
 
-// Interface for the humanity verifier contract.
-interface IHumanityVerifier {
+interface PlonkVerifier {
     function verifyProof(
-        uint256[2] calldata a,
-        uint256[2][2] calldata b,
-        uint256[2] calldata c,
-        uint256[5] calldata input
-    ) external view returns (bool);
-}
-
-// Interface for the update verifier contract.
-interface IUpdateVerifier {
-    function verifyProof(
-        uint256[2] calldata a,
-        uint256[2][2] calldata b,
-        uint256[2] calldata c,
-        uint256[47] calldata input
+        bytes memory proof,
+        uint[] memory pubSignals
     ) external view returns (bool);
 }
 
@@ -71,8 +58,8 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
 
     uint public depositAmount = 0.05 ether;
 
-    IHumanityVerifier public immutable humanityVerifier;
-    IUpdateVerifier public immutable updateVerifier;
+    PlonkVerifier public immutable humanityVerifier;
+    PlonkVerifier public immutable updateVerifier;
     IProofOfHumanity public immutable poh;
     IHasher3 public immutable hasher3;
 
@@ -85,8 +72,8 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         address _hasher2,
         address _hasher3
     ) MerkleTreeWithHistory(HEIGHT, _hasher2) {
-        humanityVerifier = IHumanityVerifier(_humanityVerifier);
-        updateVerifier = IUpdateVerifier(_updateVerifier);
+        humanityVerifier = PlonkVerifier(_humanityVerifier);
+        updateVerifier = PlonkVerifier(_updateVerifier);
         poh = IProofOfHumanity(_poh);
         hasher3 = IHasher3(_hasher3);
     }
@@ -128,9 +115,7 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         *  @param previouslyRegistered Whether the user's previous submission in the pool was registered.
         *  @param currentPath The path of the user's submission in the merkle tree to the root.
         *  @param updatedPath The path of the user's updated submission in the merkle tree to the root.
-        *  @param a The first part of the proof.
-        *  @param b The second part of the proof.
-        *  @param c The third part of the proof.
+        *  @param proof The plonk proof data.
      */
     function updateSubmission(
             address user,
@@ -138,9 +123,7 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
             uint previouslyRegistered,
             bytes32[] memory currentPath,
             bytes32[] memory updatedPath,
-            uint[2] memory a,
-            uint[2][2] memory b,
-            uint[2] memory c
+            bytes memory proof
     ) public payable {
         require(roots[currentRootIndex] == currentPath[20], "current root not on current path");
 
@@ -158,7 +141,7 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
 
         bytes32 pubKey = users[user];
 
-        uint[2 * HEIGHT + 7] memory inputs;
+        uint[] memory inputs = new uint[](2 * HEIGHT + 7);
         inputs[0] = uint(pubKey);
         inputs[1] = uint(previousSubmissionTime);
         inputs[2] = previouslyRegistered;
@@ -170,7 +153,7 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         for (uint i = 0; i < HEIGHT + 1; i++) {
             inputs[i + 6 + HEIGHT] = uint(updatedPath[i]);
         }
-        require(updateVerifier.verifyProof(a, b, c, inputs),  "update not verified");
+        require(updateVerifier.verifyProof(proof, inputs),  "update not verified");
 
         _update(currentPath, updatedPath);
 
@@ -183,22 +166,18 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
      *  @param currentPath The current path of the user's registration in the merkle tree.
      *  @param updatedPath The updated path of the user's registration in the merkle tree after setting
      *  the user's registration to false.
-     *  @param a The first element of the update proof.
-     *  @param b The second element of the update proof.
-     *  @param c The third element of the update proof.
+     *  @param proof The plonk proof data.
      */
     function unregister(
             uint submissionTime,
             bytes32[] memory currentPath,
             bytes32[] memory updatedPath,
-            uint[2] memory a,
-            uint[2][2] memory b,
-            uint[2] memory c
+            bytes memory proof
     ) public {
         require(users[msg.sender] != 0, "not in pool");
 
         bytes32 pubkey = users[msg.sender];
-        uint[2 * HEIGHT + 7] memory inputs;
+        uint[] memory inputs = new uint[](2 * HEIGHT + 7);
         inputs[0] = uint(pubkey);
         inputs[1] = uint(submissionTime);
         inputs[2] = 1;
@@ -210,7 +189,7 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         for (uint i = 0; i < HEIGHT + 1; i++) {
             inputs[i + 6 + HEIGHT] = uint(updatedPath[i]);
         }
-        require(updateVerifier.verifyProof(a, b, c, inputs),  "update not verified");
+        require(updateVerifier.verifyProof(proof, inputs),  "update not verified");
         _update(currentPath, updatedPath);
         emit Updated(msg.sender, submissionTime, false);
         
@@ -224,7 +203,7 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
      *  @param currentTime The current timestamp used to generate the proof
      *  @param appID The application ID used to generate the proof
      *  @param expectedAppNullifier poseidonHash (privateKey, appID, 42)
-     *  @param proof The ZK snark proof
+     *  @param proof The plonk proof data.
      *  @return True if the user is registered in the pool, false otherwise.
      */
     function checkHumanity(
@@ -232,14 +211,15 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         uint currentTime,
         uint appID,
         uint expectedAppNullifier,
-        uint[8] memory proof
+        bytes memory proof
     ) public view returns (bool) {
         require(isKnownRoot(root), "unknown root");
-        uint[2] memory a = [proof[0], proof[1]];
-        uint[2][2] memory b = [[proof[2], proof[3]], [proof[4], proof[5]]];
-        uint[2] memory c = [proof[6], proof[7]];
-        uint[5] memory inputs = [expectedAppNullifier, currentTime, appID, uint(root), uint(poh.submissionDuration())];
-
-        return humanityVerifier.verifyProof(a, b, c, inputs);
+        uint[] memory inputs = new uint[](5);
+        inputs[0] = expectedAppNullifier;
+        inputs[1] = currentTime;
+        inputs[2] = appID;
+        inputs[3] = uint(root);
+        inputs[4] = uint(poh.submissionDuration());
+        return humanityVerifier.verifyProof(proof, inputs);
     }
 }

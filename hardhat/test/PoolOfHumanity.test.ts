@@ -8,16 +8,15 @@ import { ContractFactory, BigNumber, BigNumberish, utils as etherUtils } from "e
 import { buildPoseidon, poseidonContract } from "circomlibjs";
 
 // @ts-ignore
-import { groth16 } from "snarkjs";
+import { plonk, plonkExportSolidityCallData } from "snarkjs";
 import path from "path";
 import { PoolState } from "../src/poolState";
 
-interface Proof {
-    a: [BigNumberish, BigNumberish];
-    b: [[BigNumberish, BigNumberish], [BigNumberish, BigNumberish]];
-    c: [BigNumberish, BigNumberish];
-    input: BigNumberish[];
-}
+// @ts-ignore
+import * as ffjavascript from "ffjavascript";
+
+import * as web3 from "@nomiclabs/hardhat-web3";
+
 
 function poseidonHash(poseidon: any, inputs: BigNumberish[]): string {
     const hash = poseidon(inputs.map((x) => BigNumber.from(x).toBigInt()));
@@ -34,21 +33,11 @@ function toBytesLikeArray(values: BigNumberish[]): string[] {
     return values.map(toBytesLike);
 }
 
-async function prove(input: any, wasm: string, zkey: string): Promise<Proof> {
+async function prove(input: any, wasm: string, zkey: string): Promise<any> {
     const wasmPath = path.join(__dirname, wasm);
     const zkeyPath = path.join(__dirname, zkey);
-
-    const { proof, publicSignals } = await groth16.fullProve(input, wasmPath, zkeyPath);
-    const solProof: Proof = {
-        a: [proof.pi_a[0], proof.pi_a[1]],
-        b: [
-            [proof.pi_b[0][1], proof.pi_b[0][0]],
-            [proof.pi_b[1][1], proof.pi_b[1][0]],
-        ],
-        c: [proof.pi_c[0], proof.pi_c[1]],
-        input: publicSignals
-    };
-    return solProof;
+    const { proof, publicSignals } = await plonk.fullProve(input, wasmPath, zkeyPath);
+    return `0x${await plonkExportSolidityCallData(proof)}`;
 }
 
 interface HumanityProofInputs {
@@ -62,10 +51,13 @@ interface HumanityProofInputs {
     appID: BigNumberish;
 }
 
-async function proveHumanity(input: HumanityProofInputs): Promise<Proof> {
-    return prove(input,
+async function proveHumanity(input: HumanityProofInputs): Promise<any> {
+    console.time("proveHumanity");
+    const proof = await prove(input,
                     "../circuits/build/humanity_verifier/HumanityVerifier_js/HumanityVerifier.wasm",
                     "../circuits/build/humanity_verifier/HumanityVerifier_final.zkey")
+    console.timeEnd("proveHumanity");
+    return proof;
 }
 
 interface UpdateProofInputs {
@@ -80,10 +72,13 @@ interface UpdateProofInputs {
     updatedPath: BigNumberish[];
 }
 
-async function proveUpdate(input: UpdateProofInputs): Promise<Proof> {
-    return prove(input,
+async function proveUpdate(input: UpdateProofInputs): Promise<any> {
+    console.time("proveUpdate");
+    const proof = await prove(input,
         "../circuits/build/update_verifier/UpdateVerifier_js/UpdateVerifier.wasm",
         "../circuits/build/update_verifier/UpdateVerifier_final.zkey")
+    console.timeEnd("proveUpdate");
+    return proof;
 }
 
 function getPoseidonFactory(nInputs: number) {
@@ -97,6 +92,57 @@ async function generatePoolKeys(poseidon: any): Promise<[string, string]> {
     const privateKey = ethers.utils.hexlify(ethers.utils.randomBytes(32));
     const publicKey = poseidonHash(poseidon, [privateKey]);
     return [privateKey, publicKey];
+}
+
+async function getCurveFromName(name: any) {
+    let curve;
+    const normName = normalizeName(name);
+    if (["BN128", "BN254", "ALTBN128"].indexOf(normName) >= 0) {
+        curve = await ffjavascript.buildBn128();
+    } else if (["BLS12381"].indexOf(normName) >= 0) {
+        curve = await ffjavascript.buildBls12381();
+    } else {
+        throw new Error(`Curve not supported: ${name}`);
+    }
+    return curve;
+
+    function normalizeName(n: any) {
+        return n.toUpperCase().match(/[A-Za-z0-9]+/g).join("");
+    }
+}
+
+const { unstringifyBigInts } = ffjavascript.utils;
+
+function i2hex(i: any) {
+    return ("0" + i.toString(16)).slice(-2);
+}
+
+async function plonkExportSolidityCallData(_proof: any) {
+    const proof = unstringifyBigInts(_proof);
+
+    const curve = await getCurveFromName(proof.curve);
+    const G1 = curve.G1;
+    const Fr = curve.Fr;
+
+    const proofBuff = new Uint8Array(G1.F.n8*2*9 + Fr.n8*7);
+    G1.toRprUncompressed(proofBuff, 0, G1.e(proof.A));
+    G1.toRprUncompressed(proofBuff, G1.F.n8*2, G1.e(proof.B));
+    G1.toRprUncompressed(proofBuff, G1.F.n8*4, G1.e(proof.C));
+    G1.toRprUncompressed(proofBuff, G1.F.n8*6, G1.e(proof.Z));
+    G1.toRprUncompressed(proofBuff, G1.F.n8*8, G1.e(proof.T1));
+    G1.toRprUncompressed(proofBuff, G1.F.n8*10, G1.e(proof.T2));
+    G1.toRprUncompressed(proofBuff, G1.F.n8*12, G1.e(proof.T3));
+    G1.toRprUncompressed(proofBuff, G1.F.n8*14, G1.e(proof.Wxi));
+    G1.toRprUncompressed(proofBuff, G1.F.n8*16, G1.e(proof.Wxiw));
+    Fr.toRprBE(proofBuff, G1.F.n8*18 , Fr.e(proof.eval_a));
+    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8, Fr.e(proof.eval_b));
+    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8*2, Fr.e(proof.eval_c));
+    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8*3, Fr.e(proof.eval_s1));
+    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8*4, Fr.e(proof.eval_s2));
+    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8*5, Fr.e(proof.eval_zw));
+    Fr.toRprBE(proofBuff, G1.F.n8*18 + Fr.n8*6, Fr.e(proof.eval_r));
+
+    return Array.from(proofBuff).map(i2hex).join("");
 }
 
 async function updatePoolSubmission(poolState: PoolState, 
@@ -128,16 +174,14 @@ async function updatePoolSubmission(poolState: PoolState,
         updatedRegistered: registered ? 1 : 0,
         updatedPath: updatedPath
     };
-    let updateProof = await proveUpdate(updateInputs);
+    const updateProof = await proveUpdate(updateInputs);
     await poolContract.updateSubmission(
          address,
          updateInputs.currSubmissionTime,
          updateInputs.currRegistered,
          toBytesLikeArray(updateInputs.currPath), 
          toBytesLikeArray(updateInputs.updatedPath),
-         updateProof.a,
-         updateProof.b,
-         updateProof.c); 
+         updateProof);
 }
 
 describe("PoolOfHumanity", function () {
@@ -205,9 +249,7 @@ describe("PoolOfHumanity", function () {
             appID: appID
         }
         const proof = await proveHumanity(inputs);
-        expect(proof.input[0]).to.equal(BigNumber.from(expectedAppNullifier));
-        const solProof = [proof.a[0], proof.a[1], proof.b[0][0], proof.b[0][1], proof.b[1][0], proof.b[1][1], proof.c[0], proof.c[1]];
-        const result = await poolOfHumanity.checkHumanity(toBytesLike(inputs.root), inputs.currentTime, appID, expectedAppNullifier, solProof);
+        const result = await poolOfHumanity.checkHumanity(toBytesLike(inputs.root), inputs.currentTime, appID, expectedAppNullifier, proof);
         expect(result).to.equal(true);
 
         // Unregister second user
@@ -232,10 +274,42 @@ describe("PoolOfHumanity", function () {
             updateInputs.currSubmissionTime,
             toBytesLikeArray(updateInputs.currPath), 
             toBytesLikeArray(updateInputs.updatedPath),
-            updateProof.a,
-            updateProof.b,
-            updateProof.c);
+            updateProof);
         await poolState.update(signers[2].address, 1672363314, false);
         expect(await poolState.merkleTree.root()).to.equal(await poolOfHumanity.roots(await poolOfHumanity.currentRootIndex()));
-    }).timeout(500000);
+    }).timeout(1000000);
 });
+
+/*
+Times: 
+proveUpdate: 1:21.007 (m:ss.mmm)
+proveUpdate: 1:20.661 (m:ss.mmm)
+proveHumanity: 29.487s
+proveUpdate: 1:23.113 (m:ss.mmm)
+
+·---------------------------------------|---------------------------|--------------|-----------------------------·
+|         Solc version: 0.8.17          ·  Optimizer enabled: true  ·  Runs: 1000  ·  Block limit: 30000000 gas  │
+········································|···························|··············|······························
+|  Methods                                                                                                       │
+···················|····················|·············|·············|··············|···············|··············
+|  Contract        ·  Method            ·  Min        ·  Max        ·  Avg         ·  # calls      ·  usd (avg)  │
+···················|····················|·············|·············|··············|···············|··············
+|  PoolOfHumanity  ·  register          ·     889808  ·     912116  ·      900962  ·            2  ·          -  │
+···················|····················|·············|·············|··············|···············|··············
+|  PoolOfHumanity  ·  unregister        ·          -  ·          -  ·      543605  ·            1  ·          -  │
+···················|····················|·············|·············|··············|···············|··············
+|  PoolOfHumanity  ·  updateSubmission  ·     543526  ·     547573  ·      545550  ·            2  ·          -  │
+···················|····················|·············|·············|··············|···············|··············
+|  TestPOH         ·  updateSubmission  ·      30296  ·      91683  ·       56715  ·            4  ·          -  │
+···················|····················|·············|·············|··············|···············|··············
+|  Deployments                          ·                                          ·  % of limit   ·             │
+········································|·············|·············|··············|···············|··············
+|  HumanityVerifier                     ·          -  ·          -  ·     1425006  ·        4.8 %  ·          -  │
+········································|·············|·············|··············|···············|··············
+|  PoolOfHumanity                       ·          -  ·          -  ·     3635736  ·       12.1 %  ·          -  │
+········································|·············|·············|··············|···············|··············
+|  TestPOH                              ·          -  ·          -  ·      371109  ·        1.2 %  ·          -  │
+········································|·············|·············|··············|···············|··············
+|  UpdateVerifier                       ·          -  ·          -  ·     3330381  ·       11.1 %  ·          -  │
+·---------------------------------------|-------------|-------------|--------------|---------------|-------------·
+*/
