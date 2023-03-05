@@ -8,11 +8,12 @@ enum Status {
     PendingRemoval
 }
 
-struct Submission {
-    Status status;
-    bool registered;
-    uint64 submissionTime;
-}
+    struct Humanity {
+        address owner;
+        uint64 expirationTime;
+        bool vouching;
+        bool pendingRevocation;
+    }
 
 /**
  *  @title TestPOH
@@ -20,58 +21,55 @@ struct Submission {
  *  It exposes the getSubmissionInfo function, which is used by the Pool of Humanity contract.
  */
 contract TestPOH {
-    event SubmissionUpdated(
-        address indexed submissionID,
-        Status status,
-        bool registered,
-        uint64 submissionTime);
+    event HumanityUpdated(
+        bytes20 indexed humanityID,
+        address owner,
+        uint64 expirationTime,
+        bool vouching,
+        bool pendingRevocation);
 
-    mapping (address => Submission) submissions;
-    address[] public submissionsList;
-
-    uint64 public submissionDuration;
-
-    constructor(uint64 _submissionDuration) {
-        submissionDuration = _submissionDuration;
-    }
+    mapping (bytes20 => Humanity) humanityMapping;
+    bytes20[] public humanityList;
 
     function updateSubmission(
-        address _submissionID,
-        Status _status,
-        bool _registered,
-        uint64 _submissionTime) external {
-        require(_submissionTime > 0, "Submission time must be greater than 0");
-        if (submissions[_submissionID].submissionTime == 0) {
-            submissionsList.push(_submissionID);
+        bytes20 _humanityID,
+        address _owner,
+        bool _vouching,
+        bool _pendingRevocation,
+        uint64 _expirationTime) external {
+        require(_expirationTime > 0, "Expiration time must be greater than 0");
+        if (humanityMapping[_humanityID].expirationTime == 0) {
+            humanityList.push(_humanityID);
         }
-        submissions[_submissionID] = Submission( _status, _registered, _submissionTime);
-        emit SubmissionUpdated(_submissionID, _status, _registered, _submissionTime);
+        humanityMapping[_humanityID] = Humanity( _owner, _expirationTime, _vouching, _pendingRevocation);
+        emit HumanityUpdated(_humanityID, _owner, _expirationTime, _vouching, _pendingRevocation);
     }
 
     function numSubmissions() external view returns (uint) {
-        return submissionsList.length;
+        return humanityList.length;
     }
 
-    function getSubmissionInfo(address _submissionID)
+    function getHumanityInfo(bytes20 _humanityId)
         external
         view
         returns (
-            Status status,
-            uint64 submissionTime,
-            uint64 index,
-            bool registered,
-            bool hasVouched,
-            uint numberOfRequests
+            bool vouching,
+            bool pendingRevocation,
+            uint64 nbPendingRequests,
+            uint64 expirationTime,
+            address owner,
+            uint256 nbRequests
         )
     {
-        Submission storage submission = submissions[_submissionID];
+        Humanity storage humanity = humanityMapping[_humanityId];
         return (
-            submission.status,
-            submission.submissionTime,
+            humanity.vouching,
+            humanity.pendingRevocation,
             0,
-            submission.registered,
-            false,
+            humanity.expirationTime,
+            humanity.owner,
             0
         );
     }
+
 }

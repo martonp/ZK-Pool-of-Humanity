@@ -18,14 +18,13 @@ template CheckHumanity(levels) {
     signal input pathElements[levels];
     signal input pathIndices[levels];
     signal input privateKey;
-    signal input submissionTime;
-    signal input submissionDuration;
+    signal input expirationTime;
 
     signal output appNullifier;
 
     component lessThan = LessThan(35);
     lessThan.in[0] <== currentTime;
-    lessThan.in[1] <== submissionTime + submissionDuration;
+    lessThan.in[1] <== expirationTime;
     lessThan.out === 1;
 
     component pubKeyHasher = Poseidon(1);
@@ -39,7 +38,7 @@ template CheckHumanity(levels) {
 
     component leafHasher = Poseidon(3);
     leafHasher.inputs[0] <== pubKeyHasher.out;
-    leafHasher.inputs[1] <== submissionTime;
+    leafHasher.inputs[1] <== expirationTime;
     leafHasher.inputs[2] <== 1; // 1 for registered, 0 for unregistered 
 
     component treeChecker = MerkleTreeChecker(levels);
@@ -49,4 +48,4 @@ template CheckHumanity(levels) {
     treeChecker.pathIndices <== pathIndices;
 }
 
-component main {public [currentTime, submissionDuration, root, appID] } = CheckHumanity(20);
+component main {public [currentTime, root, appID] } = CheckHumanity(20);

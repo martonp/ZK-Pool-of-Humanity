@@ -9,7 +9,7 @@ interface IHumanityVerifier {
         uint256[2] calldata a,
         uint256[2][2] calldata b,
         uint256[2] calldata c,
-        uint256[5] calldata input
+        uint256[4] calldata input
     ) external view returns (bool);
 }
 
@@ -41,15 +41,16 @@ enum Status {
 
 // Interface for the Proof of Humanity contract.
 interface IProofOfHumanity {
-    function submissionDuration() external view returns (uint64);
-
-    function getSubmissionInfo(address _submissionID) external view returns (
-            Status status,
-            uint64 submissionTime,
-            uint64 index,
-            bool registered,
-            bool hasVouched,
-            uint numberOfRequests
+    function getHumanityInfo(bytes20 _humanityId)
+        external
+        view
+        returns (
+            bool vouching,
+            bool pendingRevocation,
+            uint64 nbPendingRequests,
+            uint64 expirationTime,
+            address owner,
+            uint256 nbRequests
         );
 }
 
@@ -58,25 +59,20 @@ interface IProofOfHumanity {
  *  This contract manages a pool of users who are registered for the Proof of Humanity. Users who have a submission in the Proof of
  *  Humanity that has finised vouching and is not currently being challenged can register for the Pool. Users can then
  *  prove that they have a submission in the Proof of Humanity without revealing their identity.
- * 
- *  Registration to the pool requires a small deposit, which is returned if the user unregisters. If the user's Proof of Humanity
- *  registration is revoked, the deposit can be claimed by someone who updates the revoked user's registration in the pool.
  */
 contract PoolOfHumanity is MerkleTreeWithHistory {
 
-    event Registered(address indexed user, uint index, bytes32 pubKey, uint submissionTime);
-    event Updated(address indexed user, uint submissionTime, bool registered);
+    event Registered(bytes20 indexed humanityID, uint index, bytes32 pubKey, uint submissionTime);
+    event Updated(bytes20 indexed humanityID, uint submissionTime, bool registered);
 
     uint32 constant HEIGHT = 20; // Height of the merkle tree
-
-    uint public depositAmount = 0.05 ether;
 
     IHumanityVerifier public immutable humanityVerifier;
     IUpdateVerifier public immutable updateVerifier;
     IProofOfHumanity public immutable poh;
     IHasher3 public immutable hasher3;
 
-    mapping (address => bytes32) public users; // Maps users to their public key
+    mapping (bytes20 => bytes32) public humans; // Maps humanityID => pubKey
 
     constructor(
         address _humanityVerifier,
@@ -96,45 +92,45 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
      *  and is not currently being challenged.
      *  @param pubkey The user's public key. The public key is the poseidon hash of the private key. This private key is required
      *  to verify a user's registration in the pool.
+     *  @param humanityID The user's humanityID.
      */
-    function register(bytes32 pubkey) public payable {
-        require(users[msg.sender] == 0, "already in pool");
-        require(msg.value == depositAmount, "incorrect deposit amount");
+    function register(bytes32 pubkey, bytes20 humanityID) public payable {
+        require(humans[humanityID] == 0, "already in pool");
 
-        Status  status;
-        uint64 submissionTime;
-        bool registered; 
-        (status, submissionTime, , registered, , ) = poh.getSubmissionInfo(msg.sender);
+        address owner;
+        bool vouching;
+        bool pendingRevocation;
+        uint64 expirationTime;
+        (vouching, pendingRevocation, , expirationTime, owner, ) = poh.getHumanityInfo(humanityID);
 
-        require(registered, "not registered");
-        require(status == Status.None, "incorrect status");
+        require(owner == msg.sender, "incorrect owner");
+        require(!vouching, "still vouching");
+        require(!pendingRevocation, "pending revocation");
 
-        bytes32 submissionTimeB = bytes32(uint256(submissionTime));
-        bytes32[3] memory leafHashElements = [pubkey, submissionTimeB, bytes32(uint(1))];
+        bytes32 expirationTimeB = bytes32(uint256(expirationTime));
+        bytes32[3] memory leafHashElements = [pubkey, expirationTimeB, bytes32(uint(1))];
         bytes32 leafHash = hasher3.poseidon(leafHashElements);
 
         uint index = _insert(leafHash);
-        emit Registered(msg.sender, index, pubkey, submissionTime);
+        emit Registered(humanityID, index, pubkey, expirationTime);
 
-        users[msg.sender] = pubkey;
+        humans[humanityID] = pubkey;
     }
 
-    /**
+    /** 
      *  @dev Updates a submission in the pool to match the user's current submission in the Proof of Humanity.
-        *  If the user's registration status changes from true => false, the deposit will be returned to the caller.
-        *  If the user's registration status changes from false => true, the deposit amount must be paid.
-        *  @param user The address of the user whose submission is being updated.
-        *  @param previousSubmissionTime The submission time of the user's previous submission in the pool.
-        *  @param previouslyRegistered Whether the user's previous submission in the pool was registered.
-        *  @param currentPath The path of the user's submission in the merkle tree to the root.
-        *  @param updatedPath The path of the user's updated submission in the merkle tree to the root.
-        *  @param a The first part of the proof.
-        *  @param b The second part of the proof.
-        *  @param c The third part of the proof.
+     *  @param humanityID The humanityID of the user whose submission is being updated.
+     *  @param previousExpirationTime The expiration time of the user's previous submission in the pool.
+     *  @param previouslyRegistered Whether the user's previous submission in the pool was registered.
+     *  @param currentPath The path of the user's submission in the merkle tree to the root.
+     *  @param updatedPath The path of the user's updated submission in the merkle tree to the root.
+     *  @param a The first part of the proof.
+     *  @param b The second part of the proof.
+     *  @param c The third part of the proof.
      */
     function updateSubmission(
-            address user,
-            uint previousSubmissionTime,
+            bytes20 humanityID,
+            uint previousExpirationTime,
             uint previouslyRegistered,
             bytes32[] memory currentPath,
             bytes32[] memory updatedPath,
@@ -144,28 +140,26 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
     ) public payable {
         require(roots[currentRootIndex] == currentPath[20], "current root not on current path");
 
-        Status status;
-        uint64 submissionTime;
-        bool registered;
-        (status, submissionTime, , registered, , ) = poh.getSubmissionInfo(user);
+        address owner;
+        bool vouching;
+        bool pendingRevocation;
+        uint64 expirationTime;
+        (vouching, pendingRevocation, , expirationTime, owner, ) = poh.getHumanityInfo(humanityID);
 
-        require(status == Status.None, "incorrect status");
+        require(!vouching, "still vouching");
+        require(!pendingRevocation, "pending revocation");
 
-        // If the user was not previously registered, they must pay the deposit
-        if (previouslyRegistered == 0 && registered == true) {
-            require(msg.value == depositAmount, "incorrect deposit amount");
-        }
-
-        bytes32 pubKey = users[user];
+        bool registered = owner != address(0);
+        bytes32 pubKey = humans[humanityID];
 
         uint[2 * HEIGHT + 7] memory inputs;
         inputs[0] = uint(pubKey);
-        inputs[1] = uint(previousSubmissionTime);
+        inputs[1] = uint(previousExpirationTime);
         inputs[2] = previouslyRegistered;
         for (uint i = 0; i < HEIGHT + 1; i++) {
             inputs[i + 3] = uint(currentPath[i]);
         }
-        inputs[HEIGHT + 4] = uint(submissionTime);
+        inputs[HEIGHT + 4] = uint(expirationTime);
         inputs[HEIGHT + 5] = uint(registered ? 1 : 0);
         for (uint i = 0; i < HEIGHT + 1; i++) {
             inputs[i + 6 + HEIGHT] = uint(updatedPath[i]);
@@ -174,48 +168,7 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
 
         _update(currentPath, updatedPath);
 
-        emit Updated(msg.sender, submissionTime, registered);
-    }
-
-    /**
-     *  @dev Unregisters a user from the pool. Returns the deposit to the user.
-     *  @param submissionTime The user's submission time.
-     *  @param currentPath The current path of the user's registration in the merkle tree.
-     *  @param updatedPath The updated path of the user's registration in the merkle tree after setting
-     *  the user's registration to false.
-     *  @param a The first element of the update proof.
-     *  @param b The second element of the update proof.
-     *  @param c The third element of the update proof.
-     */
-    function unregister(
-            uint submissionTime,
-            bytes32[] memory currentPath,
-            bytes32[] memory updatedPath,
-            uint[2] memory a,
-            uint[2][2] memory b,
-            uint[2] memory c
-    ) public {
-        require(users[msg.sender] != 0, "not in pool");
-
-        bytes32 pubkey = users[msg.sender];
-        uint[2 * HEIGHT + 7] memory inputs;
-        inputs[0] = uint(pubkey);
-        inputs[1] = uint(submissionTime);
-        inputs[2] = 1;
-        for (uint i = 0; i < HEIGHT + 1; i++) {
-            inputs[i + 3] = uint(currentPath[i]);
-        }
-        inputs[HEIGHT + 4] = uint(submissionTime);
-        inputs[HEIGHT + 5] = uint(0);
-        for (uint i = 0; i < HEIGHT + 1; i++) {
-            inputs[i + 6 + HEIGHT] = uint(updatedPath[i]);
-        }
-        require(updateVerifier.verifyProof(a, b, c, inputs),  "update not verified");
-        _update(currentPath, updatedPath);
-        emit Updated(msg.sender, submissionTime, false);
-        
-        (bool ok, ) = payable(msg.sender).call{value: depositAmount}("");
-        require(ok == true, "transfer failed");
+        emit Updated(humanityID, expirationTime, registered);
     }
 
     /**
@@ -233,12 +186,12 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         uint appID,
         uint expectedAppNullifier,
         uint[8] memory proof
-    ) public view returns (bool) {
+    ) external view returns (bool) {
         require(isKnownRoot(root), "unknown root");
         uint[2] memory a = [proof[0], proof[1]];
         uint[2][2] memory b = [[proof[2], proof[3]], [proof[4], proof[5]]];
         uint[2] memory c = [proof[6], proof[7]];
-        uint[5] memory inputs = [expectedAppNullifier, currentTime, appID, uint(root), uint(poh.submissionDuration())];
+        uint[4] memory inputs = [expectedAppNullifier, currentTime, appID, uint(root)];
 
         return humanityVerifier.verifyProof(a, b, c, inputs);
     }
