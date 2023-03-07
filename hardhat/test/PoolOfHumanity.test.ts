@@ -109,7 +109,8 @@ function generateHumanityID() : string {
 }
 
 async function updatePoolSubmission(poolState: PoolState, 
-    poolContract: PoolOfHumanity, 
+    poolContract: PoolOfHumanity,
+    governor: any,
     humanityID: string, 
     publicKey: string, 
     expirationTime: number,
@@ -138,8 +139,8 @@ async function updatePoolSubmission(poolState: PoolState,
         updatedPath: updatedPath
     };
     let updateProof = await proveUpdate(updateInputs);
-    await poolContract.updateSubmission(
-         humanityID,
+
+    await poolContract.connect(governor).processUpdateQueue(
          updateInputs.currExpirationTime,
          updateInputs.currRegistered,
          toBytesLikeArray(updateInputs.currPath), 
@@ -154,8 +155,7 @@ describe("PoolOfHumanity", function () {
     let poseidon : any;
     let testPOH : TestPOH;
     let poolOfHumanity : PoolOfHumanity;
-
-    const depositAmount = etherUtils.parseEther("0.05");
+    let governor : any;
 
     before(async () => {
         poseidon = await buildPoseidon();
@@ -168,7 +168,9 @@ describe("PoolOfHumanity", function () {
         const poseidon2 = await getPoseidonFactory(2).connect(signers[0]).deploy();
         const poseidon3 = await getPoseidonFactory(3).connect(signers[0]).deploy();
         testPOH = await new TestPOH__factory(signers[0]).deploy();
-        poolOfHumanity = await new PoolOfHumanity__factory().connect(signers[0]).deploy(humanityVerifier.address, updateVerifier.address, testPOH.address, poseidon2.address, poseidon3.address);
+        governor = signers[3];
+        poolOfHumanity = await new PoolOfHumanity__factory().connect(signers[0]).deploy(
+            humanityVerifier.address, updateVerifier.address, testPOH.address, poseidon2.address, poseidon3.address, governor.address);
     });
 
     it("register update two accounts", async function() {
@@ -182,25 +184,29 @@ describe("PoolOfHumanity", function () {
         // Register first user into pool
         await testPOH.updateSubmission(humanityID1, signers[1].address, false, false, 1672363114);
         await poolOfHumanity.connect(signers[1]).register(publicKey1, humanityID1)
+        await poolOfHumanity.connect(governor).processInsertionQueue();
         await poolState.register(humanityID1, 0, publicKey1, 1672363114);
         expect(await poolState.merkleTree.root()).to.equal(await poolOfHumanity.roots(await poolOfHumanity.currentRootIndex()));
-
         
         // Register second user into pool
         await testPOH.updateSubmission(humanityID2, signers[2].address, false, false, 1672363214);
         await poolOfHumanity.connect(signers[2]).register(publicKey2, humanityID2);
+        await poolOfHumanity.connect(governor).processInsertionQueue();
         await poolState.register(humanityID2, 1, publicKey2, 1672363214);
         expect(await poolState.merkleTree.root()).to.equal(await poolOfHumanity.roots(await poolOfHumanity.currentRootIndex()));
 
         // Update expiration time of first user
         await testPOH.updateSubmission(humanityID1, signers[1].address, false, false, 1672363214);
-        await updatePoolSubmission(poolState, poolOfHumanity, humanityID1, publicKey1, 1672363214, true);
+        await poolOfHumanity.updateSubmission(humanityID1);
+        await updatePoolSubmission(poolState, poolOfHumanity, governor, humanityID1, publicKey1, 1672363214, true);
         await poolState.update(humanityID1, 1672363214, true);
         expect(await poolState.merkleTree.root()).to.equal(await poolOfHumanity.roots(await poolOfHumanity.currentRootIndex()));
 
+        
         // Update submission time of second user
         await testPOH.updateSubmission(humanityID2, signers[2].address, false, false, 1672363314);
-        await updatePoolSubmission(poolState, poolOfHumanity, humanityID2, publicKey2, 1672363314, true);
+        await poolOfHumanity.updateSubmission(humanityID2);
+        await updatePoolSubmission(poolState, poolOfHumanity, governor, humanityID2, publicKey2, 1672363314, true);
         await poolState.update(humanityID2, 1672363314, true);
         expect(await poolState.merkleTree.root()).to.equal(await poolOfHumanity.roots(await poolOfHumanity.currentRootIndex()));
 
@@ -216,6 +222,7 @@ describe("PoolOfHumanity", function () {
             expirationTime: 1672363314,
             appID: appID
         }
+
         const proof = await proveHumanity(inputs);
         expect(proof.input[0]).to.equal(BigNumber.from(expectedAppNullifier));
         const solProof = [proof.a[0], proof.a[1], proof.b[0][0], proof.b[0][1], proof.b[1][0], proof.b[1][1], proof.c[0], proof.c[1]];

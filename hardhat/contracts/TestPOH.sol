@@ -8,12 +8,12 @@ enum Status {
     PendingRemoval
 }
 
-    struct Humanity {
-        address owner;
-        uint64 expirationTime;
-        bool vouching;
-        bool pendingRevocation;
-    }
+struct Humanity {
+    address owner;
+    uint64 expirationTime;
+    bool vouching;
+    bool pendingRevocation;
+}
 
 /**
  *  @title TestPOH

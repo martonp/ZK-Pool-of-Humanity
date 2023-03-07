@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "./MerkleTreeWithHistory.sol";
+import "hardhat/console.sol";
 
 // Interface for the humanity verifier contract.
 interface IHumanityVerifier {
@@ -31,14 +32,6 @@ interface IHasher3 {
         returns (bytes32);
 }
 
-// Status of a submission in the Proof of Humanity.
-enum Status {
-    None,
-    Vouching,
-    PendingRegistration,
-    PendingRemoval
-}
-
 // Interface for the Proof of Humanity contract.
 interface IProofOfHumanity {
     function getHumanityInfo(bytes20 _humanityId)
@@ -54,6 +47,16 @@ interface IProofOfHumanity {
         );
 }
 
+struct Insertion {
+    bytes32 leafHash;
+    uint deposit;
+}
+
+struct Update {
+    bytes20 humanityID;
+    uint deposit;
+}
+
 /**
  *  @title PoolOfHumanity
  *  This contract manages a pool of users who are registered for the Proof of Humanity. Users who have a submission in the Proof of
@@ -61,8 +64,7 @@ interface IProofOfHumanity {
  *  prove that they have a submission in the Proof of Humanity without revealing their identity.
  */
 contract PoolOfHumanity is MerkleTreeWithHistory {
-
-    event Registered(bytes20 indexed humanityID, uint index, bytes32 pubKey, uint submissionTime);
+    event Registered(uint index, bytes32 pubKey, uint submissionTime);
     event Updated(bytes20 indexed humanityID, uint submissionTime, bool registered);
 
     uint32 constant HEIGHT = 20; // Height of the merkle tree
@@ -74,17 +76,41 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
 
     mapping (bytes20 => bytes32) public humans; // Maps humanityID => pubKey
 
+    address public governor;
+
+    mapping(uint256 => Insertion) insertionQueue;
+    uint256 insertionQueueFirst = 1;
+    uint256 insertionQueueLast = 0;
+
+    mapping(uint256 => Update) updateQueue;
+    uint256 updateQueueFirst = 1;
+    uint256 updateQueueLast = 0;
+
+    uint public insertionGas;
+    uint public updateGas;
+
     constructor(
         address _humanityVerifier,
         address _updateVerifier,
         address _poh,
         address _hasher2,
-        address _hasher3
+        address _hasher3,
+        address _governor
     ) MerkleTreeWithHistory(HEIGHT, _hasher2) {
         humanityVerifier = IHumanityVerifier(_humanityVerifier);
         updateVerifier = IUpdateVerifier(_updateVerifier);
         poh = IProofOfHumanity(_poh);
         hasher3 = IHasher3(_hasher3);
+        governor = _governor;
+    }
+
+    modifier onlyGovernor() {
+        require(msg.sender == governor, "not governor");
+        _;
+    }
+
+    function updateGovernor(address _governor) public onlyGovernor {
+        governor = _governor;
     }
 
     /**
@@ -94,7 +120,7 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
      *  to verify a user's registration in the pool.
      *  @param humanityID The user's humanityID.
      */
-    function register(bytes32 pubkey, bytes20 humanityID) public payable {
+    function register(bytes32 pubkey, bytes20 humanityID) external payable {
         require(humans[humanityID] == 0, "already in pool");
 
         address owner;
@@ -106,51 +132,64 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         require(owner == msg.sender, "incorrect owner");
         require(!vouching, "still vouching");
         require(!pendingRevocation, "pending revocation");
+        require(pubkey != 0, "invalid pubkey");
+        require(humans[humanityID] == 0, "already in pool");
 
+        uint requiredGasDeposit = insertionGas * block.basefee * 2;
+        require(msg.value >= requiredGasDeposit, "insufficient gas deposit");
+        
         bytes32 expirationTimeB = bytes32(uint256(expirationTime));
         bytes32[3] memory leafHashElements = [pubkey, expirationTimeB, bytes32(uint(1))];
         bytes32 leafHash = hasher3.poseidon(leafHashElements);
 
-        uint index = _insert(leafHash);
-        emit Registered(humanityID, index, pubkey, expirationTime);
-
+        insertionQueueLast += 1;
+        insertionQueue[insertionQueueLast] = Insertion(leafHash, msg.value);
         humans[humanityID] = pubkey;
     }
 
-    /** 
-     *  @dev Updates a submission in the pool to match the user's current submission in the Proof of Humanity.
-     *  @param humanityID The humanityID of the user whose submission is being updated.
-     *  @param previousExpirationTime The expiration time of the user's previous submission in the pool.
-     *  @param previouslyRegistered Whether the user's previous submission in the pool was registered.
-     *  @param currentPath The path of the user's submission in the merkle tree to the root.
-     *  @param updatedPath The path of the user's updated submission in the merkle tree to the root.
-     *  @param a The first part of the proof.
-     *  @param b The second part of the proof.
-     *  @param c The third part of the proof.
-     */
-    function updateSubmission(
-            bytes20 humanityID,
-            uint previousExpirationTime,
-            uint previouslyRegistered,
-            bytes32[] memory currentPath,
-            bytes32[] memory updatedPath,
-            uint[2] memory a,
-            uint[2][2] memory b,
-            uint[2] memory c
-    ) public payable {
-        require(roots[currentRootIndex] == currentPath[20], "current root not on current path");
+    function processInsertionQueue() external onlyGovernor {
+        require(insertionQueueLast >= insertionQueueFirst, "queue empty");
 
+        Insertion storage insertion = insertionQueue[insertionQueueFirst];
+        uint index = _insert(insertion.leafHash);
+
+        uint256 deposit = insertion.deposit;
+
+        delete insertionQueue[insertionQueueFirst];
+        insertionQueueFirst++;
+
+        emit Registered(index, insertion.leafHash, block.timestamp);
+        msg.sender.call{value: deposit}("");
+    }
+
+    function processUpdateQueue(
+        uint previousExpirationTime,
+        uint previouslyRegistered,
+        bytes32[] memory currentPath,
+        bytes32[] memory updatedPath,
+        uint[2] memory a,
+        uint[2][2] memory b,
+        uint[2] memory c
+    ) external onlyGovernor {
+        require(updateQueueLast >= updateQueueFirst, "queue empty");
+
+        Update storage update = updateQueue[updateQueueFirst];
+        
         address owner;
         bool vouching;
         bool pendingRevocation;
         uint64 expirationTime;
-        (vouching, pendingRevocation, , expirationTime, owner, ) = poh.getHumanityInfo(humanityID);
+        (vouching, pendingRevocation, , expirationTime, owner, ) = poh.getHumanityInfo(update.humanityID);
 
-        require(!vouching, "still vouching");
-        require(!pendingRevocation, "pending revocation");
+        if (vouching || pendingRevocation) {
+            // Emit unable to update event
+            delete updateQueue[updateQueueFirst];
+            updateQueueFirst++;
+            return;
+        }
 
         bool registered = owner != address(0);
-        bytes32 pubKey = humans[humanityID];
+        bytes32 pubKey = humans[update.humanityID];
 
         uint[2 * HEIGHT + 7] memory inputs;
         inputs[0] = uint(pubKey);
@@ -167,8 +206,26 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         require(updateVerifier.verifyProof(a, b, c, inputs),  "update not verified");
 
         _update(currentPath, updatedPath);
+        emit Updated(update.humanityID, expirationTime, registered);
 
-        emit Updated(humanityID, expirationTime, registered);
+        uint deposit = update.deposit;
+        delete updateQueue[updateQueueFirst];
+        updateQueueFirst++;
+        msg.sender.call{value: update.deposit}("");
+    }
+
+    /** 
+     *  @dev Updates a submission in the pool to match the user's current submission in the Proof of Humanity.
+     *  @param humanityID The humanityID of the user whose submission is being updated.
+     */
+    function updateSubmission(
+            bytes20 humanityID
+    ) public payable {
+        require(humans[humanityID] != 0, "not in pool");
+        uint requiredGas = updateGas * block.basefee * 2;
+        require(msg.value >= requiredGas, "insufficient gas deposit");
+        updateQueueLast++;
+        updateQueue[updateQueueLast] = Update(humanityID, msg.value);
     }
 
     /**
