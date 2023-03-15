@@ -50,11 +50,13 @@ interface IProofOfHumanity {
 struct Insertion {
     bytes32 leafHash;
     uint deposit;
+    uint timestamp;
 }
 
 struct Update {
     bytes20 humanityID;
     uint deposit;
+    uint timestamp;
 }
 
 /**
@@ -77,6 +79,7 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
     mapping (bytes20 => bytes32) public humans; // Maps humanityID => pubKey
 
     address public governor;
+    uint queueControlTimeLimit;
 
     mapping(uint256 => Insertion) insertionQueue;
     uint256 insertionQueueFirst = 1;
@@ -102,6 +105,9 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         poh = IProofOfHumanity(_poh);
         hasher3 = IHasher3(_hasher3);
         governor = _governor;
+        queueControlTimeLimit = 1 hours;
+        insertionGas = 900000;
+        updateGas = 900000;
     }
 
     modifier onlyGovernor() {
@@ -135,6 +141,7 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         require(pubkey != 0, "invalid pubkey");
         require(humans[humanityID] == 0, "already in pool");
 
+        console.log("base fee", block.basefee);
         uint requiredGasDeposit = insertionGas * block.basefee * 2;
         require(msg.value >= requiredGasDeposit, "insufficient gas deposit");
         
@@ -143,12 +150,28 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         bytes32 leafHash = hasher3.poseidon(leafHashElements);
 
         insertionQueueLast += 1;
-        insertionQueue[insertionQueueLast] = Insertion(leafHash, msg.value);
+        insertionQueue[insertionQueueLast] = Insertion(leafHash, msg.value, block.timestamp);
         humans[humanityID] = pubkey;
     }
 
-    function processInsertionQueue() external onlyGovernor {
+    /** 
+     *  @dev Updates a submission in the pool to match the user's current submission in the Proof of Humanity.
+     *  @param humanityID The humanityID of the user whose submission is being updated.
+     */
+    function updateSubmission(
+            bytes20 humanityID
+    ) public payable {
+        require(humans[humanityID] != 0, "not in pool");
+        uint requiredGas = updateGas * block.basefee * 2;
+        require(msg.value >= requiredGas, "insufficient gas deposit");
+        updateQueueLast++;
+        updateQueue[updateQueueLast] = Update(humanityID, msg.value, block.timestamp);
+    }
+
+    function processInsertionQueue() external {
         require(insertionQueueLast >= insertionQueueFirst, "queue empty");
+        require(msg.sender == governor ||
+             insertionQueue[insertionQueueFirst].timestamp + queueControlTimeLimit < block.timestamp, "queue control time limit");
 
         Insertion storage insertion = insertionQueue[insertionQueueFirst];
         uint index = _insert(insertion.leafHash);
@@ -170,8 +193,10 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         uint[2] memory a,
         uint[2][2] memory b,
         uint[2] memory c
-    ) external onlyGovernor {
+    ) external {
         require(updateQueueLast >= updateQueueFirst, "queue empty");
+        require(msg.sender == governor ||
+             updateQueue[updateQueueLast].timestamp + queueControlTimeLimit < block.timestamp, "queue control time limit");
 
         Update storage update = updateQueue[updateQueueFirst];
         
@@ -212,20 +237,6 @@ contract PoolOfHumanity is MerkleTreeWithHistory {
         delete updateQueue[updateQueueFirst];
         updateQueueFirst++;
         msg.sender.call{value: update.deposit}("");
-    }
-
-    /** 
-     *  @dev Updates a submission in the pool to match the user's current submission in the Proof of Humanity.
-     *  @param humanityID The humanityID of the user whose submission is being updated.
-     */
-    function updateSubmission(
-            bytes20 humanityID
-    ) public payable {
-        require(humans[humanityID] != 0, "not in pool");
-        uint requiredGas = updateGas * block.basefee * 2;
-        require(msg.value >= requiredGas, "insufficient gas deposit");
-        updateQueueLast++;
-        updateQueue[updateQueueLast] = Update(humanityID, msg.value);
     }
 
     /**
